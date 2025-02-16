@@ -3,348 +3,344 @@ local U = {}
 local A = vim.api
 
 local sc_file_link_patterns = {
-    { "^<!--.*%[(.+)%]%((.+)%).*-->$", "<!--[%name%](%link%)-->" },
-    { "^%[(.+)%]%((.+)%)$",            "[%name%](%link%)" },
+	{ "^<!--.*%[(.+)%]%((.+)%).*-->$", "<!--[%name%](%link%)-->" },
+	{ "^%[(.+)%]%((.+)%)$", "[%name%](%link%)" },
 }
 
 function U.validate_link_fmt(idx)
-    return idx >= 1 and idx <= #sc_file_link_patterns
+	return idx >= 1 and idx <= #sc_file_link_patterns
 end
 
 function U.next_link_fmt(idx)
-    if U.validate_link_fmt(idx) then
-        return (idx % #sc_file_link_patterns) + 1
-    else
-        return 1 -- Return the first index if the current index is invalid
-    end
+	if U.validate_link_fmt(idx) then
+		return (idx % #sc_file_link_patterns) + 1
+	else
+		return 1 -- Return the first index if the current index is invalid
+	end
 end
 
 ---Check whether the window is valid
 ---@param win number Window ID
 ---@return boolean
 function U.is_win_valid(win)
-    return win and vim.api.nvim_win_is_valid(win)
+	return win and vim.api.nvim_win_is_valid(win)
 end
 
 ---Check whether the buffer is valid
 ---@param buf number Buffer ID
 ---@return boolean
 function U.is_buf_valid(buf)
-    return buf and vim.api.nvim_buf_is_loaded(buf)
+	return buf and vim.api.nvim_buf_is_loaded(buf)
 end
 
 -- Function to check if a path is absolute
 function U.is_absolute_path(path)
-    if path:sub(1, 1) == "/" then          -- Unix-like absolute path
-        return true
-    elseif path:match("^[A-Za-z]:\\") then -- Windows absolute path
-        return true
-    end
-    return false
+	if path:sub(1, 1) == "/" then -- Unix-like absolute path
+		return true
+	elseif path:match("^[A-Za-z]:\\") then -- Windows absolute path
+		return true
+	end
+	return false
 end
 
 function U.make_absolute_path(path)
-    local base_dir = vim.fn.expand('%:p:h') .. '/'
-    if not U.is_absolute_path(path) then
-        -- Ensure the base_dir ends with a "/"
-        if base_dir:sub(-1) ~= "/" then
-            base_dir = base_dir .. "/"
-        end
-        return base_dir .. path
-    else
-        return path
-    end
+	local base_dir = vim.fn.expand("%:p:h") .. "/"
+	if not U.is_absolute_path(path) then
+		-- Ensure the base_dir ends with a "/"
+		if base_dir:sub(-1) ~= "/" then
+			base_dir = base_dir .. "/"
+		end
+		return base_dir .. path
+	else
+		return path
+	end
 end
 
 function U.make_relative_path(path)
-    local base_dir = vim.fn.expand('%:p:h') .. '/'
-    -- Ensure the base_dir ends with a "/"
-    if base_dir:sub(-1) ~= "/" then
-        base_dir = base_dir .. "/"
-    end
+	local base_dir = vim.fn.expand("%:p:h") .. "/"
+	-- Ensure the base_dir ends with a "/"
+	if base_dir:sub(-1) ~= "/" then
+		base_dir = base_dir .. "/"
+	end
 
-    -- Check if the path starts with base_dir
-    if path:sub(1, #base_dir) == base_dir then
-        -- Remove the base_dir part from path
-        return path:sub(#base_dir + 1)
-    else
-        -- Path is not a subpath of base_dir; return it as is
-        return path
-    end
+	-- Check if the path starts with base_dir
+	if path:sub(1, #base_dir) == base_dir then
+		-- Remove the base_dir part from path
+		return path:sub(#base_dir + 1)
+	else
+		-- Path is not a subpath of base_dir; return it as is
+		return path
+	end
 end
 
 -- Function to find the start and end line numbers of the table
 function U.find_table_boundaries(cursor_line)
-    local line_content = A.nvim_buf_get_lines(0, cursor_line - 1, cursor_line, false)[1]
-    local table_top_line = nil
+	local line_content = A.nvim_buf_get_lines(0, cursor_line - 1, cursor_line, false)[1]
+	local table_top_line = nil
 
-    -- Find the top line of the table
-    while cursor_line > 0 and string.match(line_content, "|.*|$") do
-        cursor_line = cursor_line - 1
-        table_top_line = cursor_line + 1
-        if cursor_line > 0 then
-            line_content = A.nvim_buf_get_lines(0, cursor_line - 1, cursor_line, false)[1]
-        end
-    end
+	-- Find the top line of the table
+	while cursor_line > 0 and string.match(line_content, "|.*|$") do
+		cursor_line = cursor_line - 1
+		table_top_line = cursor_line + 1
+		if cursor_line > 0 then
+			line_content = A.nvim_buf_get_lines(0, cursor_line - 1, cursor_line, false)[1]
+		end
+	end
 
-    if not table_top_line then
-        return nil, nil -- No table found
-    end
+	if not table_top_line then
+		return nil, nil -- No table found
+	end
 
-    -- Find the bottom line of the table
-    local table_bottom_line = table_top_line
-    while true do
-        local lines = A.nvim_buf_get_lines(0, table_bottom_line, table_bottom_line + 1, false)
-        if #lines == 0 or not string.match(lines[1], "|.*|$") then
-            break
-        end
-        table_bottom_line = table_bottom_line + 1
-    end
+	-- Find the bottom line of the table
+	local table_bottom_line = table_top_line
+	while true do
+		local lines = A.nvim_buf_get_lines(0, table_bottom_line, table_bottom_line + 1, false)
+		if #lines == 0 or not string.match(lines[1], "|.*|$") then
+			break
+		end
+		table_bottom_line = table_bottom_line + 1
+	end
 
-    return table_top_line, table_bottom_line
+	return table_top_line, table_bottom_line
 end
 
 -- Function to get the lines of a markdown table as a lua table
 function U.get_table_lines(table_top_line, table_bottom_line)
-    if not table_top_line or not table_bottom_line then
-        return nil -- Invalid input
-    end
+	if not table_top_line or not table_bottom_line then
+		return nil -- Invalid input
+	end
 
-    local table_lines = A.nvim_buf_get_lines(0, table_top_line - 1, table_bottom_line, false)
-    return table_lines
+	local table_lines = A.nvim_buf_get_lines(0, table_top_line - 1, table_bottom_line, false)
+	return table_lines
 end
 
 function U.parse_markdown_table_line(line_number, line)
-    local col_index = 1
-    local col_letter = ""
-    local last_pipe = 1 -- Start after the first pipe of the original line
-    local cells = {}
+	local col_index = 1
+	local col_letter = ""
+	local last_pipe = 1 -- Start after the first pipe of the original line
+	local cells = {}
 
-    for i = 2, #line do                             -- Start from the second character to skip initial pipe
-        if line:sub(i, i) == '|' or i == #line then -- Check for pipe or end of line
-            local end_position = i - 1
-            local content_segment = line:sub(last_pipe + 1, i - 1)
-            local content = content_segment:match("^%s*(.-)%s*$") -- Trim spaces
+	for i = 2, #line do -- Start from the second character to skip initial pipe
+		if line:sub(i, i) == "|" or i == #line then -- Check for pipe or end of line
+			local end_position = i - 1
+			local content_segment = line:sub(last_pipe + 1, i - 1)
+			local content = content_segment:match("^%s*(.-)%s*$") -- Trim spaces
 
-            -- Convert column index to letter for cell ID
-            col_letter = ""
-            local n = col_index
-            repeat
-                n = n - 1
-                local remainder = n % 26
-                col_letter = string.char(65 + remainder) .. col_letter
-                n = (n - remainder) / 26
-            until n == 0
+			-- Convert column index to letter for cell ID
+			col_letter = ""
+			local n = col_index
+			repeat
+				n = n - 1
+				local remainder = n % 26
+				col_letter = string.char(65 + remainder) .. col_letter
+				n = (n - remainder) / 26
+			until n == 0
 
-            local cell_id = col_letter ..
-                tostring(line_number)
+			local cell_id = col_letter .. tostring(line_number)
 
-            -- Add to md_data, set content as nil if the cell is visually empty
-            table.insert(cells,
-                {
-                    cell_id = cell_id,
-                    content = (content ~= "" and content or nil),
-                    startcol = last_pipe + 1,
-                    endcol =
-                        end_position
-                })
+			-- Add to md_data, set content as nil if the cell is visually empty
+			table.insert(cells, {
+				cell_id = cell_id,
+				content = (content ~= "" and content or nil),
+				startcol = last_pipe + 1,
+				endcol = end_position,
+			})
 
-            col_index = col_index + 1
-            last_pipe = i -- Move past the pipe position for next cell start
-        end
-    end
-    return cells
+			col_index = col_index + 1
+			last_pipe = i -- Move past the pipe position for next cell start
+		end
+	end
+	return cells
 end
 
 function U.find_table_start_offset()
-    local bufnr = A.nvim_get_current_buf()
-    local current_line_num = A.nvim_win_get_cursor(0)[1] - 1 -- Lua is 1-indexed, Vim is 0-indexed
-    local is_within_table = false
+	local bufnr = A.nvim_get_current_buf()
+	local current_line_num = A.nvim_win_get_cursor(0)[1] - 1 -- Lua is 1-indexed, Vim is 0-indexed
+	local is_within_table = false
 
-    -- First, check if the current line could be a part of a table
-    local current_line = A.nvim_buf_get_lines(bufnr, current_line_num, current_line_num + 1, false)[1]
-    if not string.match(current_line, "|.*|$") then
-        return nil -- Current line is not a table line
-    end
+	-- First, check if the current line could be a part of a table
+	local current_line = A.nvim_buf_get_lines(bufnr, current_line_num, current_line_num + 1, false)[1]
+	if not string.match(current_line, "|.*|$") then
+		return nil -- Current line is not a table line
+	end
 
-    -- Now, search upwards from the current line
-    while current_line_num >= 0 do
-        local line = A.nvim_buf_get_lines(bufnr, current_line_num, current_line_num + 1, false)[1]
+	-- Now, search upwards from the current line
+	while current_line_num >= 0 do
+		local line = A.nvim_buf_get_lines(bufnr, current_line_num, current_line_num + 1, false)[1]
 
-        -- Quick check: If the line is potentially part of a table
-        if string.find(line, '|') then
-            -- Detailed check for the separator (adjust according to your table format)
-            if string.match(line, "|.*|$") then
-                -- Found the separator line, ensure the header exists above
-                if current_line_num > 0 then
-                    local header_line = A.nvim_buf_get_lines(bufnr, current_line_num - 1, current_line_num, false)
-                        [1]
-                    if string.find(header_line, '|') then
-                        is_within_table = true      -- The current position is indeed within a table
-                        return current_line_num - 1 -- Return the header line number
-                    end
-                end
-            end
-        end
-        current_line_num = current_line_num - 1
-    end
+		-- Quick check: If the line is potentially part of a table
+		if string.find(line, "|") then
+			-- Detailed check for the separator (adjust according to your table format)
+			if string.match(line, "|.*|$") then
+				-- Found the separator line, ensure the header exists above
+				if current_line_num > 0 then
+					local header_line = A.nvim_buf_get_lines(bufnr, current_line_num - 1, current_line_num, false)[1]
+					if string.find(header_line, "|") then
+						is_within_table = true -- The current position is indeed within a table
+						return current_line_num - 1 -- Return the header line number
+					end
+				end
+			end
+		end
+		current_line_num = current_line_num - 1
+	end
 
-    -- If the function hasn't returned by now, check if it's because we're within a table
-    if is_within_table then
-        return current_line_num -- Return the current line number if it is within a table
-    else
-        return nil              -- Return nil if not within a table
-    end
+	-- If the function hasn't returned by now, check if it's because we're within a table
+	if is_within_table then
+		return current_line_num -- Return the current line number if it is within a table
+	else
+		return nil -- Return nil if not within a table
+	end
 end
 
 function U.get_cell_under_cursor()
-    local bufnr = vim.api.nvim_get_current_buf()
+	local bufnr = vim.api.nvim_get_current_buf()
 
-    local cursor_position = vim.api.nvim_win_get_cursor(0) -- Get current cursor position
-    local line = cursor_position[1]                        -- Line number
-    local col = cursor_position[2]                         -- Column number
+	local cursor_position = vim.api.nvim_win_get_cursor(0) -- Get current cursor position
+	local line = cursor_position[1] -- Line number
+	local col = cursor_position[2] -- Column number
 
-    local current_line = vim.api.nvim_buf_get_lines(bufnr, line - 1, line, true)[1]
+	local current_line = vim.api.nvim_buf_get_lines(bufnr, line - 1, line, true)[1]
 
-    local table_start = U.find_table_start_offset()
-    if table_start then
-        if table_start > 0 then
-            table_start = table_start - 1 -- ignore the formatting line
-        end
-        local cells = U.parse_markdown_table_line(table_start, current_line)
-        if cells then
-            for _, cell in ipairs(cells) do
-                if col >= cell.startcol - 1 and col <= cell.endcol - 1 then
-                    return cell
-                end
-            end
-        end
-    end
-    return nil
+	local table_start = U.find_table_start_offset()
+	if table_start then
+		if table_start > 0 then
+			table_start = table_start - 1 -- ignore the formatting line
+		end
+		local cells = U.parse_markdown_table_line(table_start, current_line)
+		if cells then
+			for _, cell in ipairs(cells) do
+				if col >= cell.startcol - 1 and col <= cell.endcol - 1 then
+					return cell
+				end
+			end
+		end
+	end
+	return nil
 end
 
 function U.parse_markdown_table(file_lines)
-    local md_data = {}
-    local line_number = 0 -- Initialize line_number to track the current line
+	local md_data = {}
+	local line_number = 0 -- Initialize line_number to track the current line
 
-    for j, line in ipairs(file_lines) do
-        -- Skip the second line, assuming it's the formatting line
-        if j ~= 2 and string.match(line, "|.*|$") then
-            local cells = U.parse_markdown_table_line(line_number, line)
-            for _, cell in ipairs(cells) do
-                md_data[cell.cell_id] = { content = cell.content }
-            end
-            line_number = line_number + 1 -- Increment line number at the start of the loop
-        end
-    end
+	for j, line in ipairs(file_lines) do
+		-- Skip the second line, assuming it's the formatting line
+		if j ~= 2 and string.match(line, "|.*|$") then
+			local cells = U.parse_markdown_table_line(line_number, line)
+			for _, cell in ipairs(cells) do
+				md_data[cell.cell_id] = { content = cell.content }
+			end
+			line_number = line_number + 1 -- Increment line number at the start of the loop
+		end
+	end
 
-    return md_data
+	return md_data
 end
 
 -- Function to set cache for the current buffer
 function U.set_sc_data(sc_file, sc_sheet, sc_data)
-    local bufnr = vim.api.nvim_get_current_buf()
+	local bufnr = vim.api.nvim_get_current_buf()
 
-    local _, cache = pcall(vim.api.nvim_buf_get_var, bufnr, 'sc_im_cache')
-    cache = {
-        sc_data = {
-            [sc_file] = {
-                [sc_sheet] = sc_data
-            }
-        }
-    }
-    vim.api.nvim_buf_set_var(bufnr, 'sc_im_cache', cache)
+	local _, cache = pcall(vim.api.nvim_buf_get_var, bufnr, "sc_im_cache")
+	cache = {
+		sc_data = {
+			[sc_file] = {
+				[sc_sheet] = sc_data,
+			},
+		},
+	}
+	vim.api.nvim_buf_set_var(bufnr, "sc_im_cache", cache)
 end
 
 -- Function to get sc data from cache or read from file
 -- if sc_sheet is nil, force_read needs to be true and current sheet is used
 function U.get_sc_data(sc_file, sc_sheet, force_read)
-    local cache = nil
+	local cache = nil
 
-    if force_read ~= true then
-        local bufnr = vim.api.nvim_get_current_buf()
-        local status, cache = pcall(vim.api.nvim_buf_get_var, bufnr, 'sc_im_cache')
-        if sc_sheet == nil then
-            return vim.notify("Error: sc_sheet is nil and force_read is not true", vim.log.levels.ERROR)
-        end
-    end
+	if force_read ~= true then
+		local bufnr = vim.api.nvim_get_current_buf()
+		local status, cache = pcall(vim.api.nvim_buf_get_var, bufnr, "sc_im_cache")
+		if sc_sheet == nil then
+			return vim.notify("Error: sc_sheet is nil and force_read is not true", vim.log.levels.ERROR)
+		end
+	end
 
-    local sc_data = nil
-    if status and cache and cache.sc_data and cache.sc_data[sc_file] then
-        sc_data = cache.sc_data[sc_file][sc_sheet]
-    else
-        local current_sheet, full_sc_data = U.parse_sc_file(U.make_absolute_path(sc_file))
-        if sc_sheet == nil then
-            sc_sheet = current_sheet
-        end
-        if full_sc_data and full_sc_data[sc_sheet] ~= nil then
-            sc_data = full_sc_data[sc_sheet]
-            U.set_sc_data(sc_file, sc_sheet, sc_data)
-        end
-    end
-    return sc_data, sc_sheet
+	local sc_data = nil
+	if status and cache and cache.sc_data and cache.sc_data[sc_file] then
+		sc_data = cache.sc_data[sc_file][sc_sheet]
+	else
+		local current_sheet, full_sc_data = U.parse_sc_file(U.make_absolute_path(sc_file))
+		if sc_sheet == nil then
+			sc_sheet = current_sheet
+		end
+		if full_sc_data and full_sc_data[sc_sheet] ~= nil then
+			sc_data = full_sc_data[sc_sheet]
+			U.set_sc_data(sc_file, sc_sheet, sc_data)
+		end
+	end
+	return sc_data, sc_sheet
 end
 
 function U.get_sheets(sc_filename)
-    local sc_file = io.open(sc_filename, "r")
-    local sheet_names = {}
-    local current_sheet = nil
-    if not sc_file then
-        return "Error: Unable to open SC file."
-    end
+	local sc_file = io.open(sc_filename, "r")
+	local sheet_names = {}
+	local current_sheet = nil
+	if not sc_file then
+		return "Error: Unable to open SC file."
+	end
 
-    for line in sc_file:lines() do
-        local action, sheetname
-        if string.match(line, "^newsheet") then
-            action, sheetname = string.match(line, "^(newsheet) \"([^\"]*)\"")
-        elseif string.match(line, "^movetosheet") then
-            action, sheetname = string.match(line, "^(movetosheet) \"([^\"]*)\"")
-        end
-        if action and sheetname then
-            if action == "newsheet" then
-                table.insert(sheet_names, sheetname)
-            elseif action == "movetosheet" then
-                current_sheet = sheetname
-            end
-        end
-    end
+	for line in sc_file:lines() do
+		local action, sheetname
+		if string.match(line, "^newsheet") then
+			action, sheetname = string.match(line, '^(newsheet) "([^"]*)"')
+		elseif string.match(line, "^movetosheet") then
+			action, sheetname = string.match(line, '^(movetosheet) "([^"]*)"')
+		end
+		if action and sheetname then
+			if action == "newsheet" then
+				table.insert(sheet_names, sheetname)
+			elseif action == "movetosheet" then
+				current_sheet = sheetname
+			end
+		end
+	end
 
-    return current_sheet, sheet_names
+	return current_sheet, sheet_names
 end
 
 function U.get_table_under_cursor()
-    local table_found = true
-    local file_lines = {}
-    local cursor_line = A.nvim_win_get_cursor(0)[1]
-    local table_top_line, table_bottom_line = U.find_table_boundaries(cursor_line)
+	local table_found = true
+	local file_lines = {}
+	local cursor_line = A.nvim_win_get_cursor(0)[1]
+	local table_top_line, table_bottom_line = U.find_table_boundaries(cursor_line)
 
-    local sc_sheet_name = nil
-    local sc_file_path = nil
-    local sc_link_fmt = nil
+	local sc_sheet_name = nil
+	local sc_file_path = nil
+	local sc_link_fmt = nil
 
-    -- If no table is found
-    if not table_top_line or not table_bottom_line then
-        -- set defaults for a new table
-        table_top_line = cursor_line
-        table_bottom_line = cursor_line
+	-- If no table is found
+	if not table_top_line or not table_bottom_line then
+		-- set defaults for a new table
+		table_top_line = cursor_line
+		table_bottom_line = cursor_line
 
-        -- lets first check if we find a link to a .sc file
-        sc_sheet_name, sc_file_path, sc_link_fmt = U.get_sc_file_from_link(cursor_line - 1)
-        if sc_sheet_name and sc_file_path and sc_link_fmt then
-            table_top_line, table_bottom_line = U.find_table_boundaries(cursor_line - 1)
-            file_lines = U.get_table_lines(table_top_line, table_bottom_line)
-            if not table_top_line or not table_bottom_line then
-                table_top_line = cursor_line
-                table_bottom_line = cursor_line
-                table_found = false
-            end
-        end
-    else
-        file_lines = U.get_table_lines(table_top_line, table_bottom_line)
-        sc_sheet_name, sc_file_path, sc_link_fmt = U.get_sc_file_from_link(table_bottom_line)
-    end
+		-- lets first check if we find a link to a .sc file
+		sc_sheet_name, sc_file_path, sc_link_fmt = U.get_sc_file_from_link(cursor_line - 1)
+		if sc_sheet_name and sc_file_path and sc_link_fmt then
+			table_top_line, table_bottom_line = U.find_table_boundaries(cursor_line - 1)
+			file_lines = U.get_table_lines(table_top_line, table_bottom_line)
+			if not table_top_line or not table_bottom_line then
+				table_top_line = cursor_line
+				table_bottom_line = cursor_line
+				table_found = false
+			end
+		end
+	else
+		file_lines = U.get_table_lines(table_top_line, table_bottom_line)
+		sc_sheet_name, sc_file_path, sc_link_fmt = U.get_sc_file_from_link(table_bottom_line)
+	end
 
-    return table_found, table_top_line, table_bottom_line, file_lines, sc_sheet_name, sc_file_path, sc_link_fmt
+	return table_found, table_top_line, table_bottom_line, file_lines, sc_sheet_name, sc_file_path, sc_link_fmt
 end
 
 --
@@ -367,144 +363,147 @@ end
 --     }
 -- }
 function U.parse_sc_file(sc_filename)
-    -- Parse SC file
-    local sc_data = {}
-    local current_sheet = nil
-    local sc_file = io.open(sc_filename, "r")
-    if not sc_file then
-        return "Error: Unable to open SC file."
-    end
+	-- Parse SC file
+	local sc_data = {}
+	local current_sheet = nil
+	local sc_file = io.open(sc_filename, "r")
+	if not sc_file then
+		return "Error: Unable to open SC file."
+	end
 
-    for line in sc_file:lines() do
-        local sheetname = string.match(line, "movetosheet \"([^\"]*)\"")
-        if sheetname then
-            current_sheet = sheetname
-            if not sc_data[current_sheet] then
-                sc_data[current_sheet] = {}
-            end
-        end
+	for line in sc_file:lines() do
+		local sheetname = string.match(line, 'movetosheet "([^"]*)"')
+		if sheetname then
+			current_sheet = sheetname
+			if not sc_data[current_sheet] then
+				sc_data[current_sheet] = {}
+			end
+		end
 
-        --local cell_type, cell_id, content = string.match(line, "(%w+) (%w+) = \"([^\"]*)\"")
-        local cell_type, cell_id, content = string.match(line, "(%w+) (%w+) =%s*\"?([^\"]*)\"?")
+		--local cell_type, cell_id, content = string.match(line, "(%w+) (%w+) = \"([^\"]*)\"")
+		local cell_type, cell_id, content = string.match(line, '(%w+) (%w+) =%s*"?([^"]*)"?')
 
-        if cell_type and cell_id and content then
-            local is_formula = false
-            if cell_type == "let" and tonumber(content) == nil then
-                is_formula = true
-            end
-            sc_data[current_sheet][cell_id] = { type = cell_type, is_formula = is_formula, content = content }
-        end
-    end
-    sc_file:close()
-    return current_sheet, sc_data
+		if cell_type and cell_id and content then
+			local is_formula = false
+			if cell_type == "let" and tonumber(content) == nil then
+				is_formula = true
+			end
+			sc_data[current_sheet][cell_id] = { type = cell_type, is_formula = is_formula, content = content }
+		end
+	end
+	sc_file:close()
+	return current_sheet, sc_data
 end
 
 function U.sc_to_md(sc_filename, script)
-    local temp_file_base = vim.fn.tempname()
-    local md_file = temp_file_base .. '.md'
+	local temp_file_base = vim.fn.tempname()
+	local md_file = temp_file_base .. ".md"
 
-    if script == nil then
-        script = ""
-    end
+	if script == nil then
+		script = ""
+	end
 
-    local sc_file_absolute = U.make_absolute_path(sc_filename)
+	local sc_file_absolute = U.make_absolute_path(sc_filename)
 
-    local command = 'echo "EXECUTE \\"load ' ..
-        sc_file_absolute:gsub('"', '\\"') .. '\n' ..
-        script:gsub('"', '\\"') ..
-        '\\"\nEXECUTE \\"w! ' .. md_file:gsub('"', '\\"') .. '\\"" | sc-im --nocurses --quit_afterload'
+	local command = 'echo "EXECUTE \\"load '
+		.. sc_file_absolute:gsub('"', '\\"')
+		.. "\n"
+		.. script:gsub('"', '\\"')
+		.. '\\"\nEXECUTE \\"w! '
+		.. md_file:gsub('"', '\\"')
+		.. '\\"" | sc-im --nocurses --quit_afterload'
 
-    vim.fn.system(command)
+	vim.fn.system(command)
 
-    local md_content = vim.fn.readfile(md_file)
+	local md_content = vim.fn.readfile(md_file)
 
-    os.remove(md_file)
+	os.remove(md_file)
 
-    return md_content
+	return md_content
 end
 
 -- Function to extract .sc name and link from a line
 function U.extract_sc_link(line)
-    if not line then
-        return nil, nil, nil -- Invalid input
-    end
+	if not line then
+		return nil, nil, nil -- Invalid input
+	end
 
-    for idx, patternInfo in ipairs(sc_file_link_patterns) do
-        local pattern = patternInfo[1]
-        local name, file = line:match(pattern)
-        if name and file and file:match("%.sc$") then
-            return name, file, idx
-        end
-    end
+	for idx, patternInfo in ipairs(sc_file_link_patterns) do
+		local pattern = patternInfo[1]
+		local name, file = line:match(pattern)
+		if name and file and file:match("%.sc$") then
+			return name, file, idx
+		end
+	end
 
-    return nil, nil, nil -- No match found
+	return nil, nil, nil -- No match found
 end
 
 function U.create_sc_link(idx, name, link)
-    local formatString = sc_file_link_patterns[idx][2]
-    -- Replace placeholders with actual name and link
-    formatString = formatString:gsub("%%name%%", name)
-    formatString = formatString:gsub("%%link%%", link)
-    return formatString
+	local formatString = sc_file_link_patterns[idx][2]
+	-- Replace placeholders with actual name and link
+	formatString = formatString:gsub("%%name%%", name)
+	formatString = formatString:gsub("%%link%%", link)
+	return formatString
 end
 
 function U.update_sc_link(link_line, link_name, link_file, link_fmt)
-    local sc_link = U.create_sc_link(link_fmt, link_name, link_file)
-    A.nvim_buf_set_lines(0, link_line, link_line + 1, false, { sc_link })
+	local sc_link = U.create_sc_link(link_fmt, link_name, link_file)
+	A.nvim_buf_set_lines(0, link_line, link_line + 1, false, { sc_link })
 end
 
 function U.insert_sc_link(link_line, link_name, link_file, link_fmt)
-    local sc_link = U.create_sc_link(link_fmt, link_name, link_file)
-    A.nvim_buf_set_lines(0, link_line, link_line, false, { sc_link })
+	local sc_link = U.create_sc_link(link_fmt, link_name, link_file)
+	A.nvim_buf_set_lines(0, link_line, link_line, false, { sc_link })
 end
 
 -- Function to get the .sc file link from the line below the last line of the table
 function U.get_sc_file_from_link(table_bottom_line)
-    if not table_bottom_line then
-        return nil, nil, nil -- Invalid input
-    end
+	if not table_bottom_line then
+		return nil, nil, nil -- Invalid input
+	end
 
-    local sc_link_line = A.nvim_buf_get_lines(0, table_bottom_line, table_bottom_line + 1, false)[1] or ""
+	local sc_link_line = A.nvim_buf_get_lines(0, table_bottom_line, table_bottom_line + 1, false)[1] or ""
 
-    return U.extract_sc_link(sc_link_line)
+	return U.extract_sc_link(sc_link_line)
 end
 
 function U.generate_random_file_name()
-    math.randomseed(os.time())
-    local random = math.random
-    local template = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'
-    return string.gsub(template, '[xy]', function(c)
-        local v = (c == 'x') and random(0, 0xf) or random(8, 0xb)
-        return string.format('%x', v)
-    end) .. '.sc'
+	math.randomseed(os.time())
+	local random = math.random
+	local template = "xxxxx"
+	return string.gsub(template, "[xy]", function(c)
+		local v = (c == "x") and random(0, 0xf) or random(8, 0xb)
+		return string.format("%x", v)
+	end) .. ".sc"
 end
 
 function U.get_link_from_cursor_pos()
-    local cursor_line = A.nvim_win_get_cursor(0)[1]
-    local table_top_line, table_bottom_line = U.find_table_boundaries(cursor_line)
+	local cursor_line = A.nvim_win_get_cursor(0)[1]
+	local table_top_line, table_bottom_line = U.find_table_boundaries(cursor_line)
 
-    -- If no table is found, do not proceed
-    if not table_top_line or not table_bottom_line then
-        vim.notify('No table found', vim.log.levels.INFO)
-        return nil, nil, nil
-    end
+	-- If no table is found, do not proceed
+	if not table_top_line or not table_bottom_line then
+		vim.notify("No table found", vim.log.levels.INFO)
+		return nil, nil, nil
+	end
 
-    return table_bottom_line, U.get_sc_file_from_link(table_bottom_line)
+	return table_bottom_line, U.get_sc_file_from_link(table_bottom_line)
 end
 
 function U.rename_file(old_path, new_path)
-    if vim.fn.filereadable(old_path) == 0 then
-        vim.notify('File does not exist', vim.log.levels.ERROR)
-        return false
-    end
+	if vim.fn.filereadable(old_path) == 0 then
+		vim.notify("File does not exist", vim.log.levels.ERROR)
+		return false
+	end
 
-    local success, err = os.rename(old_path, new_path)
-    if not success then
-        vim.notify('Error renaming file: ' .. err, vim.log.levels.ERROR)
-        return false
-    end
+	local success, err = os.rename(old_path, new_path)
+	if not success then
+		vim.notify("Error renaming file: " .. err, vim.log.levels.ERROR)
+		return false
+	end
 
-    return true
+	return true
 end
 
 --- Compares the content of the current table with the content of the .sc file and returns the differences
@@ -513,112 +512,111 @@ end
 --  @return table[] Differences between the current table and the .sc file { cell_id, sc_cell, md_cell }
 -- @return table A table of differences between the current table and the .sc file, indexed by cell_id, each value is a table containing { cell_type, sc_cell_content, md_cell_content }, where `cell_type` is the type of the cell from the .sc file, `sc_cell_content` is the content from the .sc file, and `md_cell_content` is the content from the Markdown table. If there is no corresponding cell in the .sc or Markdown data, the respective field will be nil.
 function U.compare(file_lines, sc_data)
-    -- Parse Markdown table
-    local md_data = U.parse_markdown_table(file_lines)
+	-- Parse Markdown table
+	local md_data = U.parse_markdown_table(file_lines)
 
-    -- Compare data
-    local checked_cells = {}
-    local differences = {}
-    local is_different = false
+	-- Compare data
+	local checked_cells = {}
+	local differences = {}
+	local is_different = false
 
-    local function is_equal(cell_type, first_cell, second_cell)
-        if cell_type == "let" then
-            return tonumber(first_cell) == tonumber(second_cell)
-        else
-            if first_cell == nil and second_cell == nil then
-                return true
-            else
-                return first_cell == second_cell
-            end
-        end
-    end
+	local function is_equal(cell_type, first_cell, second_cell)
+		if cell_type == "let" then
+			return tonumber(first_cell) == tonumber(second_cell)
+		else
+			if first_cell == nil and second_cell == nil then
+				return true
+			else
+				return first_cell == second_cell
+			end
+		end
+	end
 
-    -- iterate sc data
-    if sc_data ~= nil then
-        for cell_id, cell in pairs(sc_data) do
-            if cell.is_formula == false and not is_equal(cell.type, md_data[cell_id].content, cell.content) then
-                differences[cell_id] = {
-                    type = cell.type,
-                    sc_content = cell.content,
-                    md_content = md_data[cell_id]
-                        .content or nil
-                }
-                is_different = true
-            end
-            checked_cells[cell_id] = true
-        end
+	-- iterate sc data
+	if sc_data ~= nil then
+		for cell_id, cell in pairs(sc_data) do
+			if cell.is_formula == false and not is_equal(cell.type, md_data[cell_id].content, cell.content) then
+				differences[cell_id] = {
+					type = cell.type,
+					sc_content = cell.content,
+					md_content = md_data[cell_id].content or nil,
+				}
+				is_different = true
+			end
+			checked_cells[cell_id] = true
+		end
 
-        -- iterate new md data
-        for cell_id, cell_info in pairs(md_data) do
-            if checked_cells[cell_id] ~= true then
-                local num = tonumber(cell_info.content)
-                local cell_type = "leftstring"
-                if num then
-                    cell_type = "let"
-                end
-                if cell_info.content ~= nil then -- if both are nil it is not a difference
-                    differences[cell_id] = { type = cell_type, sc_content = nil, md_content = cell_info.content }
-                    is_different = true
-                end
-            end
-        end
-    end
+		-- iterate new md data
+		for cell_id, cell_info in pairs(md_data) do
+			if checked_cells[cell_id] ~= true then
+				local num = tonumber(cell_info.content)
+				local cell_type = "leftstring"
+				if num then
+					cell_type = "let"
+				end
+				if cell_info.content ~= nil then -- if both are nil it is not a difference
+					differences[cell_id] = { type = cell_type, sc_content = nil, md_content = cell_info.content }
+					is_different = true
+				end
+			end
+		end
+	end
 
-    -- Return differences
-    return is_different, differences
+	-- Return differences
+	return is_different, differences
 end
 
 function U.diff_to_script(differences)
-    local commands = {}
+	local commands = {}
 
-    -- Iterate through all differences
-    for cell_id, diff in pairs(differences) do
-        -- Determine the command based on the logic provided
-        local command = ""
-        if diff.md_content ~= nil then
-            -- Changes were made to md_cell or new md_cell was added
-            if diff.type == "let" then
-                -- For numerical values or formulas
-                command = string.format("LET %s = %s", cell_id, diff.md_content)
-            else
-                -- For text with specific alignment
-                command = string.format("%s %s = \"%s\"", diff.type:upper(), cell_id, diff.md_content)
-            end
-        elseif diff.sc_content ~= nil and diff.md_content == nil then
-            -- sc_cell exists but md_cell was removed or cleared
-            if diff.type == "let" then
-                -- Setting numerical cells to an empty value
-                command = string.format("LET %s = ", cell_id) -- Assuming '0' as the 'empty' state for numerical values
-            else
-                -- Setting text cells to an empty string
-                command = string.format("%s %s = \"\"", diff.type:upper(), cell_id)
-            end
-        end
+	-- Iterate through all differences
+	for cell_id, diff in pairs(differences) do
+		-- Determine the command based on the logic provided
+		local command = ""
+		if diff.md_content ~= nil then
+			-- Changes were made to md_cell or new md_cell was added
+			if diff.type == "let" then
+				-- For numerical values or formulas
+				command = string.format("LET %s = %s", cell_id, diff.md_content)
+			else
+				-- For text with specific alignment
+				command = string.format('%s %s = "%s"', diff.type:upper(), cell_id, diff.md_content)
+			end
+		elseif diff.sc_content ~= nil and diff.md_content == nil then
+			-- sc_cell exists but md_cell was removed or cleared
+			if diff.type == "let" then
+				-- Setting numerical cells to an empty value
+				command = string.format("LET %s = ", cell_id) -- Assuming '0' as the 'empty' state for numerical values
+			else
+				-- Setting text cells to an empty string
+				command = string.format('%s %s = ""', diff.type:upper(), cell_id)
+			end
+		end
 
-        -- Add the command to the list if one was generated
-        if command ~= "" then
-            table.insert(commands, command)
-        end
-    end
+		-- Add the command to the list if one was generated
+		if command ~= "" then
+			table.insert(commands, command)
+		end
+	end
 
-    -- Return the list of commands
-    return table.concat(commands, "\n")
+	-- Return the list of commands
+	return table.concat(commands, "\n")
 end
 
 function U.dump(o, indentLevel)
-    indentLevel = indentLevel or 0                 -- Set default indent level if none is provided
-    local indent = string.rep("    ", indentLevel) -- Define the indentation (4 spaces in this example)
+	indentLevel = indentLevel or 0 -- Set default indent level if none is provided
+	local indent = string.rep("    ", indentLevel) -- Define the indentation (4 spaces in this example)
 
-    if type(o) == 'table' then
-        local s = '{\n' -- Start with a new line after opening brace
-        for k, v in pairs(o) do
-            local key = type(k) == 'number' and '[' .. k .. ']' or '["' .. k .. '"]'
-            s = s .. indent .. '    ' .. key .. ' = ' .. U.dump(v, indentLevel + 1) .. ',\n'
-        end
-        return s .. indent .. '}'
-    else
-        return tostring(o)
-    end
+	if type(o) == "table" then
+		local s = "{\n" -- Start with a new line after opening brace
+		for k, v in pairs(o) do
+			local key = type(k) == "number" and "[" .. k .. "]" or '["' .. k .. '"]'
+			s = s .. indent .. "    " .. key .. " = " .. U.dump(v, indentLevel + 1) .. ",\n"
+		end
+		return s .. indent .. "}"
+	else
+		return tostring(o)
+	end
 end
 
 return U
