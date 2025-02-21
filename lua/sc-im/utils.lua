@@ -478,6 +478,26 @@ function U.generate_random_file_name()
 	end) .. ".sc"
 end
 
+function U.generate_incremental_filename()
+	local current_file = vim.fn.expand("%:p")
+	if current_file == "" then
+		return nil, "No file in current buffer"
+	end
+
+	local dir = vim.fn.fnamemodify(current_file, ":h")
+	local base_name = vim.fn.fnamemodify(current_file, ":t:r")
+	local ext = ".sc"
+
+	local counter = 1
+	local new_name
+	repeat
+		new_name = string.format("%s/%s_%03d%s", dir, base_name, counter, ext)
+		counter = counter + 1
+	until vim.fn.filereadable(new_name) == 0
+
+	return new_name
+end
+
 function U.get_link_from_cursor_pos()
 	local cursor_line = A.nvim_win_get_cursor(0)[1]
 	local table_top_line, table_bottom_line = U.find_table_boundaries(cursor_line)

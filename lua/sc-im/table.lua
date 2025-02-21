@@ -174,7 +174,8 @@ function Table:open_in_scim(add_link)
 	-- files
 	local temp_file_base = vim.fn.tempname()
 	local md_file = temp_file_base .. ".md"
-	local sc_file = sc_file_path or U.generate_random_file_name()
+	-- local sc_file = sc_file_path or U.generate_random_file_name()
+	local sc_file = sc_file_path or U.generate_incremental_filename()
 	local sc_file_absolute = U.make_absolute_path(sc_file)
 
 	local scim_command
