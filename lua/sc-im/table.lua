@@ -227,14 +227,15 @@ function Table:open_in_scim(add_link)
 		A.nvim_win_set_option(float_win, "relativenumber", false)
 		A.nvim_win_set_option(float_win, "signcolumn", "no")
 
-		A.nvim_buf_set_option(term_bufnr, "filetype", self.config.ft)
-
 		self.win = float_win
 		self.buf = term_bufnr
 	else
 		vim.cmd("split")
 		vim.api.nvim_win_set_buf(0, term_bufnr)
 	end
+
+	self.buf = term_bufnr
+	A.nvim_buf_set_option(term_bufnr, "filetype", self.config.ft)
 
 	-- Run the sc-im command in the new buffer
 	vim.fn.termopen(scim_command, {
